@@ -7,7 +7,9 @@ import torch.nn.functional as F
 from pathlib import Path
 from scipy.sparse import load_npz
 from tqdm.auto import tqdm
+from torch.utils.checkpoint import checkpoint
 from models import DySAT
+
 
 
 def normalize_gcn(adj):
@@ -101,7 +103,9 @@ def train_dysat(source, data_dir, out_dir,
             opt.zero_grad()
             zs = []
             for src, dst in graphs:
-                z = model.structural_one(src.to(device), dst.to(device), N)
+                z = checkpoint(model.structural_one,
+                               src.to(device), dst.to(device), N,
+                               use_reentrant=False)
                 zs.append(z[ui]); del z
             e = model.temporal(torch.stack(zs, 1))            # [U, T, F]
             del zs
