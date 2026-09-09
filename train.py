@@ -36,7 +36,8 @@ def sample_context(raw, anchors, max_positive, rng):
             k = min(max_positive, nb.size)
             pick = nb if nb.size <= k else rng.choice(nb, k, replace=False)
             s.extend([n] * len(pick)); d.extend(pick.tolist())
-        a.append(np.asarray(s)); p.append(np.asarray(d))
+        a.append(np.asarray(s, dtype=np.int64))
+        p.append(np.asarray(d, dtype=np.int64))
     return a, p
 
 
