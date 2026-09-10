@@ -138,7 +138,7 @@ def train_dysat(source, data_dir, out_dir,
         print(f"Time for epoch {time.time() - t0:.1f} | "
               f"Mean Loss at epoch {ep} : {ep_loss:.5f}", flush=True)
 
-        if ep_loss < best - 1e-4:
+        if ep_loss < best * 0.999:
             best, best_epoch, wait = ep_loss, ep, 0
             torch.save(model.state_dict(), out_dir / f"{source}_best.pt")
         else:
