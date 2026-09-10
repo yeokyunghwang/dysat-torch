@@ -63,14 +63,16 @@ def train_dysat(source, data_dir, out_dir,
     years = np.load(d / "years.npy")
     T = len(years)
 
-    raw, graphs = [], []
+    raw, graphs, active = [], [], []
     for y in years:
         W = load_npz(d / f"adj_{y}.npz").tocsr()
         N = W.shape[0]
         raw.append((W.indptr.copy(), W.indices.copy()))
+        active.append(torch.as_tensor((np.diff(W.indptr) > 0).astype(np.float32)))
         A = normalize_gcn(W)
         graphs.append((torch.as_tensor(A.row, dtype=torch.long),
-                       torch.as_tensor(A.col, dtype=torch.long)))
+                       torch.as_tensor(A.col, dtype=torch.long),
+                       torch.as_tensor(A.data, dtype=torch.float32)))
         del W, A
         
     print(f"# train nodes {N} | batches per epoch {int(np.ceil(N / batch_size))}", flush=True)
@@ -103,11 +105,12 @@ def train_dysat(source, data_dir, out_dir,
 
             opt.zero_grad()
             zs = []
-            for src, dst in graphs:
+            for t, (src, dst, w) in enumerate(graphs):
                 z = checkpoint(model.structural_one,
-                               src.to(device), dst.to(device), N,
+                               src.to(device), dst.to(device), N, w.to(device),
                                use_reentrant=False)
-                zs.append(z[ui]); del z
+                zs.append(z[ui] * active[t].to(device)[ui].unsqueeze(-1))
+                del z
             e = model.temporal(torch.stack(zs, 1))            # [U, T, F]
             del zs
 
@@ -155,8 +158,9 @@ def train_dysat(source, data_dir, out_dir,
         Z = np.empty((N, T, temporal_layer_config), dtype=np.float32)
         for s in tqdm(range(0, N, batch_size), desc=f"{source} embed"):
             bi = torch.arange(s, min(s + batch_size, N), device=device)
-            zs = [model.structural_one(src.to(device), dst.to(device), N)[bi]
-                  for src, dst in graphs]
+            zs = [model.structural_one(src.to(device), dst.to(device), N, w.to(device))[bi]
+                  * active[t].to(device)[bi].unsqueeze(-1)
+                  for t, (src, dst, w) in enumerate(graphs)]
             Z[s:s + len(bi)] = model.temporal(torch.stack(zs, 1)).cpu().numpy()
             del zs
 
