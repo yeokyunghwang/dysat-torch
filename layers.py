@@ -17,7 +17,7 @@ class StructuralAttentionLayer(nn.Module):
             if m.bias is not None:
                 nn.init.zeros_(m.bias)
 
-    def forward(self, x, src, dst,  w=None):
+    def forward(self, x, src, dst, n, w=None):
         outs = []
         for j in range(self.h):
             seq = self.W[j](x)
