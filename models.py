@@ -21,9 +21,9 @@ class DySAT(nn.Module):
         self.struct = nn.ModuleList(layers)
         self.temporal = TemporalAttentionLayer(ind, temporal_head_config, T, temporal_drop)
 
-    def structural_one(self, src, dst, n):
+    def structural_one(self, src, dst, n, w=None):
         """ src, dst : edge list (source & destination) | n = number of nodes """
         h = self.node_table.weight
         for layer in self.struct:
-            h = layer(h, src, dst, n)
+            h = layer(h, src, dst, n, w)
         return h
