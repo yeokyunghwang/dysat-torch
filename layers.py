@@ -17,13 +17,16 @@ class StructuralAttentionLayer(nn.Module):
             if m.bias is not None:
                 nn.init.zeros_(m.bias)
 
-    def forward(self, x, src, dst, n):
+    def forward(self, x, src, dst,  w=None):
         outs = []
         for j in range(self.h):
             seq = self.W[j](x)
             f1, f2 = self.a1[j](seq).view(-1), self.a2[j](seq).view(-1)
 
-            e = F.leaky_relu(f1[src] + f2[dst], 0.2)
+            e = f1[src] + f2[dst]
+            if w is not None:
+                e = e * w
+            e = F.leaky_relu(e, 0.2)
             e = e - e.max()
             ex = e.exp()
             denom = torch.zeros(n, device=x.device).index_add_(0, dst, ex)
