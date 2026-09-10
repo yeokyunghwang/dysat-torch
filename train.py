@@ -64,24 +64,34 @@ def train_dysat(source, data_dir, out_dir,
     T = len(years)
 
     raw, graphs, active = [], [], []
+    seen = None
     for y in years:
         W = load_npz(d / f"adj_{y}.npz").tocsr()
         N = W.shape[0]
         raw.append((W.indptr.copy(), W.indices.copy()))
-        active.append(torch.as_tensor((np.diff(W.indptr) > 0).astype(np.float32)))
+        deg = np.diff(W.indptr)
+        seen = (deg > 0) if seen is None else (seen | (deg > 0))
+        active.append(torch.as_tensor(seen.astype(np.float32)))
         A = normalize_gcn(W)
         graphs.append((torch.as_tensor(A.row, dtype=torch.long),
                        torch.as_tensor(A.col, dtype=torch.long),
                        torch.as_tensor(A.data, dtype=torch.float32)))
-        del W, A
-        
+        del W, A            
+        active = [a.to(device) for a in active]
+        print("# masked-in per year:", {int(y): int(a.sum()) for y, a in zip(years, active)}, flush=True)    
     print(f"# train nodes {N} | batches per epoch {int(np.ceil(N / batch_size))}", flush=True)
 
     model = DySAT(N, T, num_features, structural_layer_config,
                   structural_head_config, temporal_layer_config,
                   temporal_head_config, spatial_drop, temporal_drop).to(device)
-    opt = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-
+    # opt = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+        decay = [p for n, p in model.named_parameters()
+     if n == "node_table.weight" or (n.startswith("struct") and n.endswith(".weight"))]
+    no_decay = [p for n, p in model.named_parameters()
+                if not (n == "node_table.weight" or (n.startswith("struct") and n.endswith(".weight")))]
+    opt = torch.optim.Adam([{"params": decay, "weight_decay": weight_decay},
+                            {"params": no_decay, "weight_decay": 0.0}], lr=learning_rate)
+                    
     out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
     best, best_epoch, wait, hist = float("inf"), 0, 0, []
 
@@ -109,7 +119,7 @@ def train_dysat(source, data_dir, out_dir,
                 z = checkpoint(model.structural_one,
                                src.to(device), dst.to(device), N, w.to(device),
                                use_reentrant=False)
-                zs.append(z[ui] * active[t].to(device)[ui].unsqueeze(-1))
+                zs.append(z[ui] * active[t][ui].unsqueeze(-1))
                 del z
             e = model.temporal(torch.stack(zs, 1))            # [U, T, F]
             del zs
@@ -155,11 +165,11 @@ def train_dysat(source, data_dir, out_dir,
     model.load_state_dict(torch.load(out_dir / f"{source}_best.pt"))
     model.eval()
     with torch.no_grad():
-        Z = np.empty((N, T, temporal_layer_config), dtype=np.float32)
+        Z = np.empty((N, T, model.temporal.d), dtype=np.float32)
         for s in tqdm(range(0, N, batch_size), desc=f"{source} embed"):
             bi = torch.arange(s, min(s + batch_size, N), device=device)
             zs = [model.structural_one(src.to(device), dst.to(device), N, w.to(device))[bi]
-                  * active[t].to(device)[bi].unsqueeze(-1)
+                  * active[t][bi].unsqueeze(-1)
                   for t, (src, dst, w) in enumerate(graphs)]
             Z[s:s + len(bi)] = model.temporal(torch.stack(zs, 1)).cpu().numpy()
             del zs
