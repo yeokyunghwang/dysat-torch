@@ -85,8 +85,8 @@ def train_dysat(source, data_dir, out_dir,
                   structural_head_config, temporal_layer_config,
                   temporal_head_config, spatial_drop, temporal_drop).to(device)
     # opt = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-        decay = [p for n, p in model.named_parameters()
-     if n == "node_table.weight" or (n.startswith("struct") and n.endswith(".weight"))]
+    decay = [p for n, p in model.named_parameters()
+             if n == "node_table.weight" or (n.startswith("struct") and n.endswith(".weight"))]
     no_decay = [p for n, p in model.named_parameters()
                 if not (n == "node_table.weight" or (n.startswith("struct") and n.endswith(".weight")))]
     opt = torch.optim.Adam([{"params": decay, "weight_decay": weight_decay},
